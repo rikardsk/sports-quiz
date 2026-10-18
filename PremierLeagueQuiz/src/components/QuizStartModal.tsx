@@ -1,0 +1,163 @@
+import React, { useState } from 'react';
+import { QuestionType } from '../utils/quizUtils';
+import { MapPin, Landmark, Sparkles, Play, X, Shield, CheckSquare } from 'lucide-react';
+
+export interface QuizStartModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onStart: (mode: 'mixed' | QuestionType) => void;
+  initialMode?: 'mixed' | QuestionType;
+}
+
+interface ModeOption {
+  id: 'team-name' | 'stadium' | 'division' | 'city' | 'multiple-choice' | 'mixed';
+  title: string;
+  badge?: string;
+  description: string;
+  example: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const MODES: ModeOption[] = [
+  {
+    id: 'team-name',
+    title: 'Club Map Challenge',
+    badge: 'Classic',
+    description: 'We give you the club name, you click their stadium pin on the UK map.',
+    example: 'e.g. "Click on the map pin for Arsenal (Emirates Stadium)"',
+    icon: MapPin,
+  },
+  {
+    id: 'stadium',
+    title: 'Grounds & Stadiums Challenge',
+    badge: 'Popular',
+    description: 'Test your knowledge of famous grounds across England and Wales.',
+    example: 'e.g. "Which Premier League club plays at Anfield?"',
+    icon: Landmark,
+  },
+  {
+    id: 'division',
+    title: 'English Regions & Geography',
+    description: 'Identify clubs according to their English regions (London, North West, Midlands, etc.).',
+    example: 'e.g. "Identify the club based in the West Midlands region"',
+    icon: Shield,
+  },
+  {
+    id: 'multiple-choice',
+    title: 'Multiple Choice Quiz',
+    badge: 'Fast',
+    description: 'Answer 4-choice questions targeting stadiums, cities, and crests.',
+    example: 'e.g. "Select the club that plays at St James\' Park in Newcastle"',
+    icon: CheckSquare,
+  },
+  {
+    id: 'mixed',
+    title: 'Mixed Pro Mode',
+    badge: 'Pro',
+    description: 'Dynamic mix alternating across map pins, stadiums, regions, and multiple-choice.',
+    example: 'Mix of UK map clicks, stadium trivia, and 4-option questions',
+    icon: Sparkles,
+  },
+];
+
+const ModeOptionItem: React.FC<{
+  mode: ModeOption;
+  isSelected: boolean;
+  onSelect: (id: 'mixed' | QuestionType) => void;
+}> = ({ mode, isSelected, onSelect }) => {
+  const Icon = mode.icon;
+  const buttonClass = `w-full p-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-4 sm:gap-5 cursor-pointer ${
+    isSelected
+      ? 'border-red-500 bg-red-50/70 shadow-sm'
+      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+  }`;
+
+  return (
+    <button onClick={() => onSelect(mode.id)} className={buttonClass}>
+      <div
+        className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mr-1.5 transition-colors ${
+          isSelected ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-600'
+        }`}
+      >
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-sm text-slate-900">{mode.title}</span>
+          {mode.badge && (
+            <span
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                isSelected
+                  ? 'bg-red-100 text-red-800'
+                  : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {mode.badge}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-600 mt-0.5">{mode.description}</p>
+        <p className="text-[11px] text-slate-400 italic mt-1">{mode.example}</p>
+      </div>
+    </button>
+  );
+};
+
+export const QuizStartModal: React.FC<QuizStartModalProps> = ({
+  isOpen,
+  onClose,
+  onStart,
+  initialMode = 'team-name',
+}) => {
+  const [selectedMode, setSelectedMode] = useState<'mixed' | QuestionType>(initialMode);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-backdrop select-none" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="modal-container quiz-start-container" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-5">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Select Premier League Quiz Mode</h2>
+            <p className="text-xs text-slate-500">Pick your game style to begin the challenge</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-1">
+          {MODES.map((mode) => (
+            <ModeOptionItem
+              key={mode.id}
+              mode={mode}
+              isSelected={selectedMode === mode.id}
+              onSelect={setSelectedMode}
+            />
+          ))}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              onStart(selectedMode);
+              onClose();
+            }}
+            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-black text-white shadow-sm flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Play className="w-4 h-4 fill-white" /> Start Quiz
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

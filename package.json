@@ -1,0 +1,20 @@
+{
+  "name": "sports-quiz-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Collection of interactive geography and sports quizzes for major leagues",
+  "workspaces": [
+    "AllsvenskanQuiz",
+    "MLBQuiz",
+    "MLSQuiz",
+    "NBAQuiz",
+    "NFLQuiz",
+    "NHLQuiz",
+    "PremierLeagueQuiz",
+    "SHLQuiz"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}

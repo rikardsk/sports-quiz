@@ -1,0 +1,366 @@
+import React, { useState, useMemo } from 'react';
+import { US_STATES, BORDER_PATHS, SEPARATOR_PATH, USState } from '../data/usMapData';
+import {
+  NFL_TEAMS,
+  NFLTeam,
+  FullDivision,
+  STATE_CONFERENCE_MAP,
+  STATE_DIVISION_MAP,
+  DIVISION_COLORS,
+} from '../data/nflTeamsData';
+import { FilterOption } from './DivisionFilter';
+
+interface USMapProps {
+  selectedTeam: NFLTeam | null;
+  onSelectTeam: (team: NFLTeam) => void;
+  activeFilter?: FilterOption;
+  exploredTeams?: Set<string>;
+  isQuizMode?: boolean;
+  targetHighlightTeamId?: string | null;
+  disableMapSelection?: boolean;
+  quizFeedback?: { teamId: string; status: 'correct' | 'incorrect' | 'revealed' } | null;
+  hintDivision?: FullDivision | null;
+  hintState?: string | null;
+  correctTeamIds?: Set<string>;
+  revealedTeamIds?: Set<string>;
+}
+
+function getMarkerRingColor(
+  team: NFLTeam,
+  feedback: { teamId: string; status: 'correct' | 'incorrect' | 'revealed' } | null,
+  isCorrect: boolean,
+  isRevealed: boolean,
+  isSelected: boolean,
+  isTarget: boolean
+): string {
+  if (feedback?.teamId === team.id) {
+    if (feedback.status === 'correct') return '#10b981';
+    if (feedback.status === 'revealed') return '#f59e0b';
+    return '#ef4444';
+  }
+  if (isCorrect) return '#10b981';
+  if (isRevealed) return '#f59e0b';
+  if (isTarget || isSelected) return '#f43f5e';
+  return team.primaryColor || '#94a3b8';
+}
+
+function getConferenceStateFill(stateId: string, filter: 'AFC' | 'NFC'): string {
+  const aff = STATE_CONFERENCE_MAP[stateId] || 'None';
+  if (aff === 'None') return '#f8fafc';
+  if (aff === filter || aff === 'Both') {
+    return filter === 'AFC' ? '#fee2e2' : '#dbeafe';
+  }
+  return '#f1f5f9';
+}
+
+function getDivisionStateFill(stateId: string, activeFilter: FilterOption): string {
+  const divs = STATE_DIVISION_MAP[stateId];
+  if (!divs || divs.length === 0) return '#f8fafc';
+
+  if (activeFilter !== 'All' && activeFilter !== 'AFC' && activeFilter !== 'NFC') {
+    if (divs.includes(activeFilter as FullDivision)) {
+      return DIVISION_COLORS[activeFilter as FullDivision].bg;
+    }
+    return '#f1f5f9';
+  }
+
+  if (stateId === 'CA') return 'url(#stripes-ca)';
+  if (stateId === 'TX') return 'url(#stripes-tx)';
+  if (stateId === 'PA' || stateId === 'MD') return 'url(#stripes-pa-md)';
+  if (stateId === 'NJ') return 'url(#stripes-nj)';
+  if (stateId === 'FL') return 'url(#stripes-fl)';
+
+  const primaryDiv = divs[0];
+  return DIVISION_COLORS[primaryDiv]?.bg || '#f1f5f9';
+}
+
+function getStateFill(
+  state: USState,
+  activeFilter: FilterOption,
+  hintState: string | null,
+  selectedTeam: NFLTeam | null
+): string {
+  if (hintState && state.id === hintState) return '#fde047';
+  if (selectedTeam && selectedTeam.state === state.id) return '#fde68a';
+
+  if (activeFilter === 'AFC' || activeFilter === 'NFC') {
+    return getConferenceStateFill(state.id, activeFilter);
+  }
+
+  return getDivisionStateFill(state.id, activeFilter);
+}
+
+function getStateBorder(state: USState, activeFilter: FilterOption, hintState?: string | null): string {
+  if (hintState && state.id === hintState) return '#e11d48';
+  if (activeFilter === 'AFC') {
+    const aff = STATE_CONFERENCE_MAP[state.id];
+    return aff === 'AFC' || aff === 'Both' ? '#fca5a5' : '#cbd5e1';
+  }
+  if (activeFilter === 'NFC') {
+    const aff = STATE_CONFERENCE_MAP[state.id];
+    return aff === 'NFC' || aff === 'Both' ? '#93c5fd' : '#cbd5e1';
+  }
+
+  const divs = STATE_DIVISION_MAP[state.id];
+  if (!divs || divs.length === 0) return '#cbd5e1';
+  return '#94a3b8';
+}
+
+const PinBadge: React.FC<{ isCorrect: boolean; isRevealed: boolean }> = ({ isCorrect, isRevealed }) => {
+  if (isCorrect) {
+    return (
+      <g transform="translate(11, -11)">
+        <circle r={7.5} fill="#10b981" stroke="#ffffff" strokeWidth={1.5} />
+        <path
+          d="M-3.5 0 L-1 2.5 L3.5 -2"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+  if (isRevealed) {
+    return (
+      <g transform="translate(11, -11)">
+        <circle r={7.5} fill="#f59e0b" stroke="#ffffff" strokeWidth={1.5} />
+        <text x="0" y="3" textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="bold">?</text>
+      </g>
+    );
+  }
+  return null;
+};
+
+const TargetBeacon: React.FC = () => (
+  <circle
+    r={22}
+    fill="#f43f5e"
+    fillOpacity={0.2}
+    stroke="#f43f5e"
+    strokeWidth={2.5}
+  />
+);
+
+const TeamPin: React.FC<{
+  team: NFLTeam;
+  isSelected: boolean;
+  isHovered: boolean;
+  isCorrect: boolean;
+  isRevealed: boolean;
+  isTarget: boolean;
+  feedback: { teamId: string; status: 'correct' | 'incorrect' | 'revealed' } | null;
+  onSelect: (team: NFLTeam) => void;
+  onHover: (team: NFLTeam | null) => void;
+}> = ({ team, isSelected, isHovered, isCorrect, isRevealed, isTarget, feedback, onSelect, onHover }) => {
+  const ringColor = getMarkerRingColor(team, feedback, isCorrect, isRevealed, isSelected, isTarget);
+  const scale = isHovered || isSelected || isTarget ? 1.45 : 1;
+
+  return (
+    <g
+      transform={`translate(${team.coordinates.x}, ${team.coordinates.y}) scale(${scale})`}
+      className="cursor-pointer transition-all duration-200"
+      onClick={() => onSelect(team)}
+      onMouseEnter={() => onHover(team)}
+      onMouseLeave={() => onHover(null)}
+    >
+      {isTarget && <TargetBeacon />}
+      <circle
+        r={17}
+        fill="#ffffff"
+        stroke={ringColor}
+        strokeWidth={isSelected || isHovered || isCorrect || isTarget ? 3.5 : 2}
+        className="filter drop-shadow-md"
+      />
+      <image
+        href={team.logoUrl}
+        x="-12"
+        y="-12"
+        width="24"
+        height="24"
+        preserveAspectRatio="xMidYMid meet"
+        pointerEvents="none"
+      />
+      <PinBadge isCorrect={isCorrect} isRevealed={isRevealed} />
+    </g>
+  );
+};
+
+const MapStripesDefs: React.FC = () => (
+  <defs>
+    <pattern id="stripes-ca" width="20" height="20" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="10" height="20" fill="#fdba74" />
+      <rect x="10" y="0" width="10" height="20" fill="#ddd6fe" />
+      <line x1="10" y1="0" x2="10" y2="20" stroke="#cbd5e1" strokeWidth="0.5" />
+    </pattern>
+    <pattern id="stripes-tx" width="20" height="20" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="10" height="20" fill="#fef08a" />
+      <rect x="10" y="0" width="10" height="20" fill="#bfdbfe" />
+      <line x1="10" y1="0" x2="10" y2="20" stroke="#cbd5e1" strokeWidth="0.5" />
+    </pattern>
+    <pattern id="stripes-pa-md" width="20" height="20" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="10" height="20" fill="#fecaca" />
+      <rect x="10" y="0" width="10" height="20" fill="#bfdbfe" />
+      <line x1="10" y1="0" x2="10" y2="20" stroke="#cbd5e1" strokeWidth="0.5" />
+    </pattern>
+    <pattern id="stripes-nj" width="20" height="20" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="10" height="20" fill="#fed7aa" />
+      <rect x="10" y="0" width="10" height="20" fill="#bfdbfe" />
+      <line x1="10" y1="0" x2="10" y2="20" stroke="#cbd5e1" strokeWidth="0.5" />
+    </pattern>
+    <pattern id="stripes-fl" width="30" height="30" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="10" height="30" fill="#fed7aa" />
+      <rect x="10" y="0" width="10" height="30" fill="#fef08a" />
+      <rect x="20" y="0" width="10" height="30" fill="#a5f3fc" />
+      <line x1="10" y1="0" x2="10" y2="30" stroke="#cbd5e1" strokeWidth="0.5" />
+      <line x1="20" y1="0" x2="20" y2="30" stroke="#cbd5e1" strokeWidth="0.5" />
+    </pattern>
+  </defs>
+);
+
+const TeamHoverTooltip: React.FC<{ team: NFLTeam }> = ({ team }) => (
+  <div
+    className="absolute z-30 pointer-events-none rounded-lg flex items-center gap-2"
+    style={{
+      left: `${(team.coordinates.x / 959) * 100}%`,
+      top: `${(team.coordinates.y / 593) * 100}%`,
+      transform: 'translate(-50%, -125%)',
+      padding: '5px 8px',
+      maxWidth: '200px',
+      backgroundColor: '#0f172a',
+      border: '1px solid #334155',
+      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
+    }}
+  >
+    <img
+      src={team.logoUrl}
+      alt=""
+      style={{ width: '20px', height: '20px', objectFit: 'contain', flexShrink: 0 }}
+    />
+    <div className="min-w-0">
+      <div style={{ fontSize: '11px', fontWeight: 700, color: '#ffffff', lineHeight: 1.2 }} className="truncate">
+        {team.name}
+      </div>
+      <div style={{ fontSize: '9px', color: '#cbd5e1', lineHeight: 1.2 }} className="truncate">
+        {team.stadium}
+      </div>
+    </div>
+  </div>
+);
+
+const HintedStateOverlay: React.FC<{ hintState: string | null }> = ({ hintState }) => {
+  if (!hintState) return null;
+  const state = US_STATES.find((s) => s.id === hintState);
+  if (!state) return null;
+
+  return (
+    <path
+      d={state.d}
+      fill="#fde047"
+      stroke="#e11d48"
+      strokeWidth={2.5}
+      pointerEvents="none"
+    />
+  );
+};
+
+export const USMap: React.FC<USMapProps> = ({
+  selectedTeam,
+  onSelectTeam,
+  activeFilter = 'All',
+  isQuizMode = false,
+  targetHighlightTeamId = null,
+  disableMapSelection = false,
+  quizFeedback = null,
+  hintDivision = null,
+  hintState = null,
+  correctTeamIds,
+  revealedTeamIds,
+}) => {
+  const [hoveredTeam, setHoveredTeam] = useState<NFLTeam | null>(null);
+
+  const effectiveFilter: FilterOption = isQuizMode ? 'All' : activeFilter;
+  const effectiveSelectedTeam = isQuizMode ? null : selectedTeam;
+
+  const isTeamFilteredOut = (team: NFLTeam): boolean => {
+    if (isQuizMode) {
+      if (hintDivision && team.division !== hintDivision) return true;
+      return false;
+    }
+    if (hintDivision && team.division !== hintDivision) return true;
+    if (activeFilter === 'All') return false;
+    if (activeFilter === 'AFC' || activeFilter === 'NFC') return team.conference !== activeFilter;
+    return team.division !== activeFilter;
+  };
+
+  const orderedTeams = useMemo(() => {
+    if (!targetHighlightTeamId) return NFL_TEAMS;
+    return [...NFL_TEAMS].sort((a, b) => {
+      if (a.id === targetHighlightTeamId) return 1;
+      if (b.id === targetHighlightTeamId) return -1;
+      return 0;
+    });
+  }, [targetHighlightTeamId]);
+
+  return (
+    <div className="relative w-full aspect-[959/593] bg-sky-50/20 rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden p-2">
+      <svg
+        viewBox="0 0 959 593"
+        className="w-full h-full select-none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <MapStripesDefs />
+
+        <g id="states">
+          {US_STATES.map((state) => (
+            <path
+              key={state.id}
+              d={state.d}
+              fill={getStateFill(state, effectiveFilter, hintState, effectiveSelectedTeam)}
+              stroke={getStateBorder(state, effectiveFilter, hintState)}
+              strokeWidth="0.8"
+              className="transition-colors duration-150"
+            />
+          ))}
+        </g>
+
+        <HintedStateOverlay hintState={hintState} />
+
+        <g id="borders" pointerEvents="none">
+          {BORDER_PATHS.map((b) => (
+            <path key={b.id} d={b.d} fill="none" stroke="#94a3b8" strokeWidth="0.8" />
+          ))}
+          <path d={SEPARATOR_PATH} fill="none" stroke="#cbd5e1" strokeWidth="1.5" />
+        </g>
+
+        <g id="nfl-teams">
+          {orderedTeams.map((team) => {
+            if (!isQuizMode && isTeamFilteredOut(team)) return null;
+
+            return (
+              <TeamPin
+                key={team.id}
+                team={team}
+                isSelected={selectedTeam?.id === team.id}
+                isHovered={hoveredTeam?.id === team.id}
+                isCorrect={Boolean(correctTeamIds?.has(team.id))}
+                isRevealed={Boolean(revealedTeamIds?.has(team.id))}
+                isTarget={targetHighlightTeamId === team.id}
+                feedback={quizFeedback}
+                onSelect={(t) => {
+                  if (!disableMapSelection) onSelectTeam(t);
+                }}
+                onHover={(t) => {
+                  if (!isQuizMode) setHoveredTeam(t);
+                }}
+              />
+            );
+          })}
+        </g>
+      </svg>
+
+      {!isQuizMode && hoveredTeam && <TeamHoverTooltip team={hoveredTeam} />}
+    </div>
+  );
+};
